@@ -1,0 +1,24 @@
+[package]
+name = "txradar"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+default-run = "txradar"
+
+[[bin]]
+name = "txradar"
+path = "src/main.rs"
+
+[dependencies]
+txradar-types = { workspace = true }
+txradar-log = { workspace = true }
+txradar-stream = { workspace = true }
+txradar-core = { workspace = true }
+txradar-tips = { workspace = true }
+txradar-agent = { workspace = true }
+txradar-tui = { workspace = true }
+
+tokio = { workspace = true }
+anyhow = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }

@@ -1,0 +1,24 @@
+# Rust / Cargo
+/target
+**/target
+Cargo.lock.bak
+
+# Secrets & local config — NEVER commit keypairs or API keys
+*.json.key
+keypairs/
+*.keypair
+.env
+.env.local
+config/local.toml
+config/secrets.toml
+
+# Lifecycle logs are regenerated; keep curated ones under logs/curated/
+/logs/*.jsonl
+!/logs/curated/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db

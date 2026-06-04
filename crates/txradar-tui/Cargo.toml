@@ -1,0 +1,14 @@
+[package]
+name = "txradar-tui"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+txradar-types = { workspace = true }
+txradar-stream = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+ratatui = { workspace = true }
+crossterm = { workspace = true }

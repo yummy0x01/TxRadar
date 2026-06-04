@@ -1,0 +1,75 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/txradar-types",
+    "crates/txradar-log",
+    "crates/txradar-stream",
+    "crates/txradar-core",
+    "crates/txradar-tips",
+    "crates/txradar-agent",
+    "crates/txradar-tui",
+    "bin/txradar",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0"
+authors = ["TxRadar"]
+repository = "https://github.com/your-org/txradar"
+rust-version = "1.79"
+
+# Shared dependency versions, used across crates via `workspace = true`.
+# Pinned conservatively; `cargo update` within semver on first build.
+[workspace.dependencies]
+# Async runtime + utilities
+tokio = { version = "1.38", features = ["full"] }
+tokio-stream = "0.1"
+futures = "0.3"
+async-trait = "0.1"
+
+# Errors / logging
+anyhow = "1"
+thiserror = "1"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
+
+# Serialization / time / config
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
+chrono = { version = "0.4", features = ["serde"] }
+humantime-serde = "1"
+
+# HTTP (Jito JSON-RPC, tip floor, Anthropic)
+reqwest = { version = "0.12", features = ["json", "rustls-tls"], default-features = false }
+
+# Solana / Jito
+solana-sdk = "2.0"
+solana-client = "2.0"
+solana-transaction-status = "2.0"
+bincode = "1.3"
+base64 = "0.22"
+bs58 = "0.5"
+
+# Yellowstone gRPC (AGPL-3.0 — drives the workspace license choice)
+yellowstone-grpc-client = "3"
+yellowstone-grpc-proto = "3"
+tonic = { version = "0.12", features = ["tls", "tls-roots"] }
+
+# TUI
+ratatui = "0.28"
+crossterm = "0.28"
+
+# Internal crates
+txradar-types = { path = "crates/txradar-types" }
+txradar-log = { path = "crates/txradar-log" }
+txradar-stream = { path = "crates/txradar-stream" }
+txradar-core = { path = "crates/txradar-core" }
+txradar-tips = { path = "crates/txradar-tips" }
+txradar-agent = { path = "crates/txradar-agent" }
+txradar-tui = { path = "crates/txradar-tui" }
+
+[profile.release]
+opt-level = 3
+lto = "thin"

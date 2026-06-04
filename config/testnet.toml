@@ -1,0 +1,66 @@
+# TxRadar — TESTNET profile (development / free faucet SOL).
+# Switch networks by changing TXRADAR_PROFILE in .env to "mainnet".
+# Secrets (keypair path, x-token, API keys) live in .env, NOT here.
+
+network = "testnet"
+
+[rpc]
+# Solana JSON-RPC for testnet. Replace with a SolInfra/Triton/Helius URL if provided.
+http_url = "https://api.testnet.solana.com"
+# Commitment used when fetching blockhashes for time-sensitive txs.
+# Deliberately NOT "finalized" (see README Q2): a finalized hash is already stale.
+blockhash_commitment = "confirmed"
+
+[yellowstone]
+# gRPC endpoint for slot/leader/tx streaming. Fill with your provider's endpoint.
+endpoint = "https://grpc.testnet.example.com:443"
+# x_token is read from TXRADAR_YELLOWSTONE_X_TOKEN in .env.
+ping_interval_secs = 30
+# Buffer of stream events between the gRPC reader and consumers (backpressure).
+channel_capacity = 4096
+# Initial gRPC flow-control window (bytes).
+stream_window_bytes = 4194304
+
+[yellowstone.reconnect]
+enabled = true
+initial_backoff_ms = 250
+max_backoff_ms = 10000
+# Replay from last-seen slot on reconnect, deduplicating client-side.
+replay_from_last_slot = true
+
+[jito]
+# Testnet block engine. Pick the lowest-latency region for you.
+block_engine_url = "https://dallas.testnet.block-engine.jito.wtf/api/v1"
+# Default request rate cap (Jito allows ~1 req/s per IP per region).
+max_requests_per_sec = 1
+# Tip floor data feed (used by the tip oracle + AI agent; never hardcode tips).
+tip_floor_rest = "https://bundles.jito.wtf/api/v1/bundles/tip_floor"
+tip_floor_ws = "wss://bundles.jito.wtf/api/v1/bundles/tip_stream"
+
+[tips]
+# Bounds only — the actual tip is chosen dynamically by the agent/oracle.
+min_lamports = 1000
+# Safety ceiling so a bad decision can't drain the wallet.
+max_lamports = 100000
+# How recent tip-floor samples are weighted (exponential moving average).
+ema_alpha = 0.3
+
+[lifecycle]
+# How long to wait for each commitment stage before classifying as expired/failed.
+processed_timeout_secs = 30
+confirmed_timeout_secs = 60
+finalized_timeout_secs = 120
+# Poll interval for Jito getBundleStatuses as a BACKUP to stream confirmation.
+status_poll_interval_secs = 2
+
+[agent]
+provider = "anthropic"
+model = "claude-haiku-4-5-20251001"
+# Hard cap on autonomous retry attempts per transaction.
+max_retries = 4
+# If true, agent decisions are logged but a human must approve sends (dry-run).
+require_approval = false
+
+[log]
+# JSONL lifecycle log — the graded deliverable.
+path = "./logs/lifecycle.jsonl"

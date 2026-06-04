@@ -1,0 +1,49 @@
+# TxRadar — MAINNET profile (final graded lifecycle-log campaign, real SOL).
+# Identical shape to testnet.toml; only endpoints/network differ.
+# Use tiny tips — this profile spends REAL SOL. Secrets live in .env.
+
+network = "mainnet"
+
+[rpc]
+http_url = "https://api.mainnet-beta.solana.com"
+blockhash_commitment = "confirmed"
+
+[yellowstone]
+endpoint = "https://grpc.mainnet.example.com:443"
+ping_interval_secs = 30
+channel_capacity = 8192
+stream_window_bytes = 4194304
+
+[yellowstone.reconnect]
+enabled = true
+initial_backoff_ms = 250
+max_backoff_ms = 10000
+replay_from_last_slot = true
+
+[jito]
+# Choose the region closest to your host (amsterdam/frankfurt/ny/tokyo/etc.).
+block_engine_url = "https://ny.mainnet.block-engine.jito.wtf/api/v1"
+max_requests_per_sec = 1
+tip_floor_rest = "https://bundles.jito.wtf/api/v1/bundles/tip_floor"
+tip_floor_ws = "wss://bundles.jito.wtf/api/v1/bundles/tip_stream"
+
+[tips]
+# Keep tips small on mainnet — real money. Oracle/agent stay within these bounds.
+min_lamports = 1000
+max_lamports = 50000
+ema_alpha = 0.3
+
+[lifecycle]
+processed_timeout_secs = 30
+confirmed_timeout_secs = 60
+finalized_timeout_secs = 120
+status_poll_interval_secs = 2
+
+[agent]
+provider = "anthropic"
+model = "claude-haiku-4-5-20251001"
+max_retries = 4
+require_approval = false
+
+[log]
+path = "./logs/lifecycle.jsonl"
