@@ -1,0 +1,17 @@
+# TxRadar build configuration.
+#
+# Windows/MSVC needs to link against a prebuilt OpenSSL (installed via
+# `winget install ShiningLight.OpenSSL.Dev`) instead of compiling it from
+# source. These point openssl-sys at that install and disable the vendored
+# (source-compiled) path. On non-Windows machines these vars are simply unused
+# (the system OpenSSL/pkg-config path takes over), so this stays cross-platform.
+#
+# If you installed OpenSSL somewhere else, update OPENSSL_LIB_DIR /
+# OPENSSL_INCLUDE_DIR accordingly.
+[env]
+OPENSSL_NO_VENDOR = "1"
+OPENSSL_LIB_DIR = 'C:\Program Files\OpenSSL-Win64\lib\VC\x64\MD'
+OPENSSL_INCLUDE_DIR = 'C:\Program Files\OpenSSL-Win64\include'
+
+[net]
+retry = 10

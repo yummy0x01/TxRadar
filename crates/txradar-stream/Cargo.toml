@@ -12,7 +12,7 @@ futures = { workspace = true }
 tracing = { workspace = true }
 thiserror = { workspace = true }
 serde = { workspace = true }
-# Uncommented in Phase 1 once endpoints/auth are available:
-# yellowstone-grpc-client = { workspace = true }
-# yellowstone-grpc-proto = { workspace = true }
-# tonic = { workspace = true }
+# Phase 1: live Yellowstone/Geyser gRPC streaming.
+yellowstone-grpc-client = { workspace = true }
+yellowstone-grpc-proto = { workspace = true }
+tonic = { workspace = true }

@@ -17,6 +17,7 @@
 pub mod blockhash;
 pub mod bundle;
 pub mod jito;
+pub mod rpc;
 pub mod tracker;
 
 /// Errors surfaced by the core stack.

@@ -14,9 +14,9 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 reqwest = { workspace = true }
 chrono = { workspace = true }
-# Uncommented in Phase 2:
-# solana-sdk = { workspace = true }
-# solana-client = { workspace = true }
-# bincode = { workspace = true }
-# base64 = { workspace = true }
-# bs58 = { workspace = true }
+# Phase 2: transaction signing, bundle construction, encoding.
+solana-sdk = { workspace = true }
+bincode = { workspace = true }
+base64 = { workspace = true }
+bs58 = { workspace = true }
+rand = { workspace = true }

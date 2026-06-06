@@ -9,7 +9,8 @@ http_url = "https://api.mainnet-beta.solana.com"
 blockhash_commitment = "confirmed"
 
 [yellowstone]
-endpoint = "https://grpc.mainnet.example.com:443"
+# SolInfra Yellowstone gRPC (Frankfurt). Auth token in TXRADAR_YELLOWSTONE_X_TOKEN.
+endpoint = "https://fra.grpc.solinfra.dev:443"
 ping_interval_secs = 30
 channel_capacity = 8192
 stream_window_bytes = 4194304
@@ -21,8 +22,8 @@ max_backoff_ms = 10000
 replay_from_last_slot = true
 
 [jito]
-# Choose the region closest to your host (amsterdam/frankfurt/ny/tokyo/etc.).
-block_engine_url = "https://ny.mainnet.block-engine.jito.wtf/api/v1"
+# Frankfurt — matches SolInfra's `fra` region for low send latency.
+block_engine_url = "https://frankfurt.mainnet.block-engine.jito.wtf/api/v1"
 max_requests_per_sec = 1
 tip_floor_rest = "https://bundles.jito.wtf/api/v1/bundles/tip_floor"
 tip_floor_ws = "wss://bundles.jito.wtf/api/v1/bundles/tip_stream"

@@ -7,8 +7,10 @@
 //! run the same code path.
 
 use std::env;
+use std::time::Duration;
 
 use anyhow::{Context, Result};
+use txradar_stream::{spawn, ConnectionState, SlotStatus, StreamConfig, StreamEvent};
 use txradar_types::Config;
 
 /// Secrets pulled from the environment, kept separate from the TOML profile.
@@ -53,8 +55,18 @@ fn init_tracing() {
         .init();
 }
 
+/// Load environment from `.env.local` (preferred, gitignored) then `.env`.
+/// `dotenvy` does not overwrite variables already set in the real environment,
+/// so an explicit shell export still wins. Missing files are not an error.
+fn load_dotenv() {
+    // `.env.local` first so its values take precedence over `.env`.
+    let _ = dotenvy::from_filename(".env.local");
+    let _ = dotenvy::dotenv();
+}
+
 #[tokio::main]
 async fn main() -> Result<()> {
+    load_dotenv();
     init_tracing();
 
     let profile = env::var("TXRADAR_PROFILE").unwrap_or_else(|_| "testnet".to_string());
@@ -84,7 +96,91 @@ async fn main() -> Result<()> {
     //   Phase 5  txradar-agent   -> AI decision-maker
     //   Phase 6  fault injection -> forced blockhash expiry
     //   Phase 7  txradar-tui     -> radar dashboard
-    tracing::info!(target: "txradar", "scaffold boot OK — stack wiring lands in later phases");
+
+    // --- Phase 1: live Yellowstone slot stream -----------------------------
+    // Gated on having an x-token so a default checkout still boots cleanly. When
+    // a token is present we connect to the configured endpoint and print the
+    // live slot commitment progression as a smoke test of the stream layer.
+    match &secrets.yellowstone_x_token {
+        None => {
+            tracing::warn!(
+                target: "txradar",
+                "TXRADAR_YELLOWSTONE_X_TOKEN not set — skipping live stream. \
+                 Set it (and config.yellowstone.endpoint) to stream slots."
+            );
+            tracing::info!(target: "txradar", "scaffold boot OK — set the x-token to exercise Phase 1");
+        }
+        Some(token) => {
+            run_stream_smoketest(&config, token.clone()).await;
+        }
+    }
 
     Ok(())
+}
+
+/// Phase 1 smoke test: subscribe to the slot stream and log commitment
+/// transitions for a bounded window, then shut down. Proves connect + auth +
+/// subscribe + keepalive + event mapping end-to-end against a real endpoint.
+async fn run_stream_smoketest(config: &Config, x_token: String) {
+    const RUN_FOR: Duration = Duration::from_secs(30);
+
+    tracing::info!(
+        target: "txradar",
+        endpoint = %config.yellowstone.endpoint,
+        "Phase 1: starting Yellowstone slot stream (smoke test, {}s)",
+        RUN_FOR.as_secs()
+    );
+
+    let stream_cfg = StreamConfig::slots_only(config.yellowstone.clone(), Some(x_token));
+    let mut handle = spawn(stream_cfg);
+
+    let mut processed = 0u64;
+    let mut confirmed = 0u64;
+    let mut finalized = 0u64;
+    let deadline = tokio::time::sleep(RUN_FOR);
+    tokio::pin!(deadline);
+
+    loop {
+        tokio::select! {
+            _ = &mut deadline => {
+                tracing::info!(
+                    target: "txradar",
+                    processed, confirmed, finalized,
+                    "Phase 1 smoke test window elapsed — stream layer verified"
+                );
+                break;
+            }
+            event = handle.events.recv() => {
+                match event {
+                    None => {
+                        tracing::warn!(target: "txradar", "stream channel closed");
+                        break;
+                    }
+                    Some(StreamEvent::SlotStatus { slot, status, .. }) => {
+                        match status {
+                            SlotStatus::Processed => processed += 1,
+                            SlotStatus::Confirmed => confirmed += 1,
+                            SlotStatus::Finalized => finalized += 1,
+                            _ => {}
+                        }
+                        tracing::debug!(target: "txradar", slot, ?status, "slot update");
+                    }
+                    Some(StreamEvent::Connection(state)) => {
+                        match state {
+                            ConnectionState::Connected =>
+                                tracing::info!(target: "txradar", "stream connected"),
+                            other =>
+                                tracing::info!(target: "txradar", ?other, "stream connection state"),
+                        }
+                    }
+                    Some(StreamEvent::Transaction { signature, slot, failed }) => {
+                        tracing::debug!(target: "txradar", %signature, slot, failed, "tx update");
+                    }
+                    Some(StreamEvent::Leader { slot, leader }) => {
+                        tracing::debug!(target: "txradar", slot, %leader, "leader update");
+                    }
+                }
+            }
+        }
+    }
 }
