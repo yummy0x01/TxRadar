@@ -47,6 +47,25 @@ pub struct BundleStatus {
     pub err: bool,
 }
 
+/// The next Jito-connected leader, from `getNextScheduledLeader`. Bundles are
+/// only processed when a Jito leader is up, so we time `sendBundle` to land just
+/// before `next_leader_slot`.
+#[derive(Debug, Clone)]
+pub struct NextLeader {
+    pub current_slot: u64,
+    pub next_leader_slot: u64,
+    pub next_leader_identity: String,
+    pub next_leader_region: Option<String>,
+}
+
+impl NextLeader {
+    /// Slots until the next Jito leader is up (0 if it's the current slot or
+    /// already passed — the schedule advanced between our request and now).
+    pub fn slots_until_leader(&self) -> u64 {
+        self.next_leader_slot.saturating_sub(self.current_slot)
+    }
+}
+
 #[derive(Debug, thiserror::Error)]
 pub enum JitoError {
     #[error("http error: {0}")]
@@ -100,25 +119,60 @@ impl JitoClient {
     }
 
     /// POST a JSON-RPC call to `<base_url><path>` and return the `result` value.
+    ///
+    /// The free Jito block-engine endpoints are *globally* rate-limited: under
+    /// congestion they reply `429` or a JSON-RPC `-32097` ("globally rate
+    /// limited") error even for well-formed, properly-spaced requests. We retry
+    /// such responses with exponential backoff so a transient global-throttle
+    /// window doesn't sink an otherwise-valid call (notably `sendBundle`).
     async fn call(&self, path: &str, method: &str, params: Value) -> Result<Value, JitoError> {
-        self.throttle().await;
+        const MAX_RATE_RETRIES: u32 = 6;
         let url = format!("{}{}", self.base_url, path);
         let body = json!({ "jsonrpc": "2.0", "id": 1, "method": method, "params": params });
-        let mut req = self.http.post(&url).json(&body);
-        if let Some(uuid) = &self.uuid {
-            req = req.header("x-jito-auth", uuid);
+
+        let mut attempt = 0u32;
+        loop {
+            self.throttle().await;
+            let mut req = self.http.post(&url).json(&body);
+            if let Some(uuid) = &self.uuid {
+                req = req.header("x-jito-auth", uuid);
+            }
+            let resp = req.send().await?;
+            let status = resp.status();
+            let text = resp.text().await?;
+            let json: Value = serde_json::from_str(&text).unwrap_or(Value::Null);
+
+            // Global rate limit surfaces as either a 429 status or a JSON-RPC
+            // -32097 error body. Back off and retry both.
+            let rpc_code = json.get("error").and_then(|e| e.get("code")).and_then(Value::as_i64);
+            let rate_limited = status.as_u16() == 429 || rpc_code == Some(-32097);
+            if rate_limited {
+                if attempt < MAX_RATE_RETRIES {
+                    // 0.6, 1.2, 2.4, 4.8, 8, 8 … seconds.
+                    let backoff_ms = (600u64 << attempt.min(4)).min(8_000);
+                    tracing::warn!(
+                        target: "txradar::jito",
+                        %method, attempt = attempt + 1, max = MAX_RATE_RETRIES, backoff_ms,
+                        "Jito globally rate limited; backing off and retrying"
+                    );
+                    attempt += 1;
+                    tokio::time::sleep(Duration::from_millis(backoff_ms)).await;
+                    continue;
+                }
+                return Err(JitoError::RateLimited);
+            }
+
+            if let Some(err) = json.get("error") {
+                return Err(JitoError::Rpc(err.to_string()));
+            }
+            if !status.is_success() {
+                return Err(JitoError::Rpc(format!("HTTP {status}: {}", text.trim())));
+            }
+            return json
+                .get("result")
+                .cloned()
+                .ok_or_else(|| JitoError::Shape("missing `result`".into()));
         }
-        let resp = req.send().await?;
-        if resp.status().as_u16() == 429 {
-            return Err(JitoError::RateLimited);
-        }
-        let resp: Value = resp.error_for_status()?.json().await?;
-        if let Some(err) = resp.get("error") {
-            return Err(JitoError::Rpc(err.to_string()));
-        }
-        resp.get("result")
-            .cloned()
-            .ok_or_else(|| JitoError::Shape("missing `result`".into()))
     }
 
     /// Submit a bundle. Returns the Jito `bundle_id` (a SHA-256 of the
@@ -151,6 +205,31 @@ impl JitoClient {
         Ok(InflightStatus::parse(status))
     }
 
+    /// The next Jito-connected leader and how far away it is. Drives
+    /// leader-window submission timing — we hold a bundle until a Jito leader is
+    /// within reach so it isn't dropped for arriving outside a leader slot.
+    pub async fn get_next_scheduled_leader(&self) -> Result<NextLeader, JitoError> {
+        let result = self.call("/bundles", "getNextScheduledLeader", json!([])).await?;
+        let current_slot = result
+            .get("currentSlot")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| JitoError::Shape("missing currentSlot".into()))?;
+        let next_leader_slot = result
+            .get("nextLeaderSlot")
+            .and_then(Value::as_u64)
+            .ok_or_else(|| JitoError::Shape("missing nextLeaderSlot".into()))?;
+        let next_leader_identity = result
+            .get("nextLeaderIdentity")
+            .and_then(Value::as_str)
+            .unwrap_or("unknown")
+            .to_string();
+        let next_leader_region = result
+            .get("nextLeaderRegion")
+            .and_then(Value::as_str)
+            .map(String::from);
+        Ok(NextLeader { current_slot, next_leader_slot, next_leader_identity, next_leader_region })
+    }
+
     /// Settled status (slot, confirmation, error) for a bundle id.
     pub async fn get_bundle_status(&self, bundle_id: &str) -> Result<Option<BundleStatus>, JitoError> {
         let result = self
@@ -179,13 +258,4 @@ impl JitoClient {
         }))
     }
 
-    /// The current set of tip accounts (we normally use the hardcoded list, but
-    /// this lets us cross-check).
-    pub async fn get_tip_accounts(&self) -> Result<Vec<String>, JitoError> {
-        let result = self.call("/bundles", "getTipAccounts", json!([])).await?;
-        let arr = result
-            .as_array()
-            .ok_or_else(|| JitoError::Shape("tip accounts not an array".into()))?;
-        Ok(arr.iter().filter_map(|v| v.as_str().map(String::from)).collect())
-    }
 }

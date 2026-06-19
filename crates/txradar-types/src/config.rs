@@ -130,6 +130,21 @@ impl Config {
     }
 }
 
+impl RpcConfig {
+    /// The effective RPC URL with the (secret) api_key injected as a query
+    /// parameter, if one is provided. Keeps the key out of the TOML and out of
+    /// any logging of `http_url`. No key -> the base URL unchanged.
+    pub fn url_with_key(&self, api_key: Option<&str>) -> String {
+        match api_key.filter(|k| !k.is_empty()) {
+            None => self.http_url.clone(),
+            Some(key) => {
+                let sep = if self.http_url.contains('?') { '&' } else { '?' };
+                format!("{}{sep}api_key={key}", self.http_url)
+            }
+        }
+    }
+}
+
 // Convenience accessors that hand back `Duration`s instead of raw seconds.
 impl LifecycleConfig {
     pub fn processed_timeout(&self) -> Duration {

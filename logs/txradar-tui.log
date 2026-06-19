@@ -1,0 +1,8 @@
+2026-06-07T16:21:55.556680Z  INFO txradar: TxRadar starting profile=testnet network="testnet" rpc=https://api.testnet.solana.com block_engine=https://dallas.testnet.block-engine.jito.wtf/api/v1 agent_model=claude-haiku-4-5-20251001
+2026-06-07T16:21:55.556853Z  INFO txradar: secret presence secrets=keypair=set, yellowstone_x_token=set, rpc_api_key=set, anthropic_api_key=MISSING, jito_uuid=MISSING
+2026-06-07T16:21:55.556915Z  INFO txradar::demo: Phase 6: autonomous retry + fault injection demo
+2026-06-07T16:21:55.556939Z  INFO txradar::demo: no keypair configured; running SIMULATED (signs real txs, no broadcast)
+2026-06-07T16:21:55.565670Z  WARN txradar::demo: ANTHROPIC_API_KEY missing; using heuristic fallback decider
+2026-06-07T16:22:00.576162Z  WARN txradar::tips: tip floor fetch failed; using fallback floor error=fetching tip floor: error sending request for url (https://bundles.jito.wtf/api/v1/bundles/tip_floor)
+2026-06-07T16:22:00.579185Z  WARN txradar::fault: INJECTED blockhash-expiry fault — attempt fails as ExpiredBlockhash (no broadcast) attempt=1 sig=2Wy1tseNXVHBE1m1ghLRiGzstst89Pb9MXncwxmo4H5xXqpeuURjXEnavDmfUh1vQiEyyfPYiAcwzo3pxvWAsM5Q
+2026-06-07T16:22:04.707905Z  INFO txradar::sim: SIMULATED landing (no broadcast) — full lifecycle recorded sig=4DDthJoWakqMaq4TjY5hpjDroASwseiqG8k8jERn6pDbUTDBAw1sjSanwuwxCcfwYyKdsEWWZ9zZqFbe5xowJNRU slot=300000005

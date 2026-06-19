@@ -48,6 +48,23 @@ impl StreamConfig {
             commitment: CommitmentLevel::Processed,
         }
     }
+
+    /// Slots **and** transactions touching `accounts` (e.g. our fee-payer + the
+    /// Jito tip accounts), at processed commitment. This is the production
+    /// configuration: it lets us confirm bundle landing from the stream rather
+    /// than by polling RPC/Jito.
+    pub fn slots_and_accounts(
+        yellowstone: YellowstoneConfig,
+        x_token: Option<String>,
+        accounts: Vec<String>,
+    ) -> Self {
+        Self {
+            yellowstone,
+            x_token,
+            watch_accounts: accounts,
+            commitment: CommitmentLevel::Processed,
+        }
+    }
 }
 
 /// Spawn the streaming task and hand back a consumer handle.

@@ -5,7 +5,10 @@
 network = "mainnet"
 
 [rpc]
-http_url = "https://api.mainnet-beta.solana.com"
+# SolInfra RPC (Frankfurt) base URL. The api_key is injected at runtime from
+# TXRADAR_RPC_API_KEY (kept out of this file). Falls back to public mainnet-beta
+# if no key is set.
+http_url = "https://fra.rpc.solinfra.dev/sol"
 blockhash_commitment = "confirmed"
 
 [yellowstone]
@@ -29,9 +32,13 @@ tip_floor_rest = "https://bundles.jito.wtf/api/v1/bundles/tip_floor"
 tip_floor_ws = "wss://bundles.jito.wtf/api/v1/bundles/tip_stream"
 
 [tips]
-# Keep tips small on mainnet — real money. Oracle/agent stay within these bounds.
+# Real money — but the tip must be competitive enough to actually LAND. The live
+# Jito floor during congestion runs p95≈100k, p99≈800k lamports, so the ceiling
+# must clear p95 or bundles never win inclusion. 300k = 0.0003 SOL worst case per
+# landing; the 0.02 SOL budget covers dozens of landings. The agent/oracle still
+# pick dynamically within [min, max] off the live floor.
 min_lamports = 1000
-max_lamports = 50000
+max_lamports = 300000
 ema_alpha = 0.3
 
 [lifecycle]
@@ -41,8 +48,8 @@ finalized_timeout_secs = 120
 status_poll_interval_secs = 2
 
 [agent]
-provider = "anthropic"
-model = "claude-haiku-4-5-20251001"
+provider = "gemini"
+model = "gemini-2.5-flash"
 max_retries = 4
 require_approval = false
 

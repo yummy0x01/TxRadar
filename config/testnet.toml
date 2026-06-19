@@ -54,8 +54,8 @@ finalized_timeout_secs = 120
 status_poll_interval_secs = 2
 
 [agent]
-provider = "anthropic"
-model = "claude-haiku-4-5-20251001"
+provider = "gemini"
+model = "gemini-2.5-flash"
 # Hard cap on autonomous retry attempts per transaction.
 max_retries = 4
 # If true, agent decisions are logged but a human must approve sends (dry-run).

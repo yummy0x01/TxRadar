@@ -5778,7 +5778,12 @@ name = "txradar"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "async-trait",
+ "bs58",
+ "chrono",
+ "crossterm",
  "dotenvy",
+ "solana-sdk",
  "tokio",
  "tracing",
  "tracing-subscriber",

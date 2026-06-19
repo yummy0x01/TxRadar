@@ -20,6 +20,11 @@ txradar-tui = { workspace = true }
 
 tokio = { workspace = true }
 anyhow = { workspace = true }
+async-trait = { workspace = true }
 tracing = { workspace = true }
 tracing-subscriber = { workspace = true }
 dotenvy = { workspace = true }
+chrono = { workspace = true }
+solana-sdk = { workspace = true }
+bs58 = { workspace = true }
+crossterm = { workspace = true }

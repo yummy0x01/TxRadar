@@ -32,7 +32,7 @@ crates/
   txradar-stream   Yellowstone gRPC: slot/leader/tx subs, reconnect, backpressure
   txradar-core     blockhash mgr, tx+bundle construction, Jito client, tracker
   txradar-tips     tip oracle (Jito tip-floor percentiles + EMA + slot conditions)
-  txradar-agent    AI layer behind a swappable `Decider` trait (Claude default)
+  txradar-agent    AI layer behind a swappable `Decider` trait (Gemini default)
   txradar-tui      ratatui radar dashboard
 bin/
   txradar          orchestrator wiring the pipeline together
@@ -45,7 +45,7 @@ The **AI layer is cleanly separated from the core stack**: the agent decides
 
 1. Install Rust (stable) and `protoc` (needed by the Yellowstone proto build).
 2. `cp .env.example .env` and fill in: keypair path, Yellowstone `x-token`,
-   `ANTHROPIC_API_KEY`.
+   `GEMINI_API_KEY` (free key at https://aistudio.google.com/app/apikey).
 3. Pick a network with `TXRADAR_PROFILE` (`testnet` for dev, `mainnet` for the
    final graded run). Network is **pure config** — same code, different profile.
 4. `cargo run` (loads `config/<profile>.toml`).

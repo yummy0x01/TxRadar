@@ -53,8 +53,6 @@ pub enum BundleError {
     Serialize(String),
     #[error("tip {got} below Jito minimum {min} lamports")]
     TipTooLow { got: u64, min: u64 },
-    #[error("a bundle holds at most 5 transactions, got {0}")]
-    TooManyTxs(usize),
 }
 
 /// A built, signed, encoded bundle ready for `sendBundle`, plus the metadata the
@@ -162,27 +160,3 @@ pub fn build_single_tx_bundle(
     })
 }
 
-/// Assemble several pre-built, encoded transactions into one bundle (≤5),
-/// preserving order. Used when the core logic spans multiple transactions.
-pub fn assemble_bundle(
-    txs: Vec<Transaction>,
-    tip_account: String,
-    tip_lamports: u64,
-    blockhash_str: String,
-) -> Result<BuiltBundle, BundleError> {
-    if txs.len() > 5 {
-        return Err(BundleError::TooManyTxs(txs.len()));
-    }
-    let mut encoded_txs = Vec::with_capacity(txs.len());
-    let mut signatures = Vec::with_capacity(txs.len());
-    for tx in &txs {
-        signatures.push(
-            tx.signatures
-                .first()
-                .map(|s| s.to_string())
-                .ok_or_else(|| BundleError::Serialize("unsigned transaction".into()))?,
-        );
-        encoded_txs.push(encode_transaction(tx)?);
-    }
-    Ok(BuiltBundle { encoded_txs, signatures, tip_account, tip_lamports, blockhash: blockhash_str })
-}

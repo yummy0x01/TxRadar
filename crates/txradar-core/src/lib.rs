@@ -19,12 +19,3 @@ pub mod bundle;
 pub mod jito;
 pub mod rpc;
 pub mod tracker;
-
-/// Errors surfaced by the core stack.
-#[derive(Debug, thiserror::Error)]
-pub enum CoreError {
-    #[error("not yet implemented (scaffolding)")]
-    NotImplemented,
-    #[error("http error: {0}")]
-    Http(#[from] reqwest::Error),
-}

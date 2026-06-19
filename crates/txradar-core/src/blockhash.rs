@@ -31,19 +31,12 @@ impl TrackedBlockhash {
     pub fn as_hash(&self) -> Result<Hash, BlockhashError> {
         Hash::from_str(&self.blockhash).map_err(|e| BlockhashError::Parse(e.to_string()))
     }
-
-    /// Remaining validity window in blocks (0 once past the window).
-    pub fn blocks_remaining(&self, current_block_height: u64) -> u64 {
-        self.last_valid_block_height.saturating_sub(current_block_height)
-    }
 }
 
 #[derive(Debug, thiserror::Error)]
 pub enum BlockhashError {
     #[error("rpc error: {0}")]
     Rpc(#[from] RpcError),
-    #[error("no blockhash fetched yet")]
-    NotFetched,
     #[error("failed to parse blockhash: {0}")]
     Parse(String),
 }
@@ -78,20 +71,20 @@ impl BlockhashManager {
         self.current.as_ref()
     }
 
+    /// Inject a blockhash directly, bypassing RPC. Used by the simulated chain
+    /// mode (Phase 6) so a real keypair can sign an offline transaction; the
+    /// `blockhash` must be a valid base58 32-byte hash.
+    pub fn set_simulated(&mut self, blockhash: String, last_valid_block_height: u64) {
+        self.current = Some(TrackedBlockhash {
+            blockhash,
+            last_valid_block_height,
+            forced_stale: false,
+        });
+    }
+
     /// Ask RPC for the current block height (used for expiry checks).
     pub async fn current_block_height(&self) -> Result<u64, BlockhashError> {
         Ok(self.rpc.get_block_height(&self.commitment).await?)
-    }
-
-    /// Whether the current blockhash is expired against a fresh block-height
-    /// read. Errors if we've never fetched a blockhash.
-    pub async fn is_current_expired(&self) -> Result<bool, BlockhashError> {
-        let current = self.current.as_ref().ok_or(BlockhashError::NotFetched)?;
-        if current.forced_stale {
-            return Ok(true);
-        }
-        let height = self.current_block_height().await?;
-        Ok(current.is_expired(height))
     }
 
     /// Fault injection: mark the current blockhash stale so the next expiry
