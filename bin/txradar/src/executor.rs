@@ -35,7 +35,11 @@ use txradar_agent::{
     AgentError, AttemptOutcome, Decision, DecisionContext, DecisionKind, Executor,
 };
 use txradar_core::blockhash::BlockhashManager;
-use txradar_core::bundle::{build_single_tx_bundle, random_tip_account, BuiltBundle};
+use txradar_core::bundle::{
+    build_single_sender_tx, build_single_tx_bundle, random_sender_tip_account, random_tip_account,
+    BuiltBundle, MIN_SENDER_TIP_LAMPORTS,
+};
+use txradar_core::helius::SenderClient;
 use txradar_core::jito::{InflightStatus, JitoClient, NextLeader};
 use txradar_core::tracker::{classify_failure, SlotCommitment};
 use txradar_tips::{recommend_from, FloorLamports, TipBounds, TipContext, TipOracle};
@@ -56,6 +60,13 @@ pub enum ChainMode {
     Live,
     /// Sign real bundles but don't broadcast; fabricate landings for the demo.
     Simulated,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum BroadcastMode {
+    Jito,
+    Sender,
+    Hybrid,
 }
 
 /// Static recommendation used only when the public tip-floor endpoint is
@@ -81,6 +92,8 @@ pub struct LiveExecutor {
     payer: Keypair,
     blockhash: BlockhashManager,
     jito: JitoClient,
+    sender: Option<SenderClient>,
+    broadcast: BroadcastMode,
     oracle: TipOracle,
     bounds: TipBounds,
     /// Lifecycle tracker, shared with the stream-ingest task in Live mode so
@@ -135,6 +148,7 @@ pub struct ExecutorParams {
     /// Tip (lamports) used for starved campaign transactions — the Jito floor
     /// minimum, so the broadcast is real but non-competitive.
     pub starve_tip: u64,
+    pub broadcast: BroadcastMode,
 }
 
 impl LiveExecutor {
@@ -145,6 +159,7 @@ impl LiveExecutor {
         payer: Keypair,
         blockhash: BlockhashManager,
         jito: JitoClient,
+        sender: Option<SenderClient>,
         oracle: TipOracle,
         bounds: TipBounds,
         tracker: SharedTracker,
@@ -156,6 +171,8 @@ impl LiveExecutor {
             payer,
             blockhash,
             jito,
+            sender,
+            broadcast: params.broadcast,
             oracle,
             bounds,
             tracker,
@@ -194,6 +211,12 @@ impl LiveExecutor {
     /// log's required real failure cases without any fabrication.
     pub fn set_starve(&mut self, on: bool) {
         self.starve = on;
+    }
+
+    fn should_use_sender(&self) -> bool {
+        matches!(self.mode, ChainMode::Live)
+            && matches!(self.broadcast, BroadcastMode::Sender | BroadcastMode::Hybrid)
+            && !self.starve
     }
 
     /// Run a closure against the dashboard state if one is attached. The lock is
@@ -344,8 +367,13 @@ impl Executor for LiveExecutor {
 
         let (blockhash_str, lvbh) = self.ensure_blockhash().await?;
 
-        // Build the (real, signed) bundle with the agent-chosen tip.
-        let tip_account = random_tip_account();
+        // Build the (real, signed) bundle/transaction with the agent-chosen tip.
+        let use_sender = self.should_use_sender();
+        let tip_account = if use_sender {
+            random_sender_tip_account()
+        } else {
+            random_tip_account()
+        };
         let note = format!("txradar attempt {} tip {}", self.attempt_id, decision.tip_lamports);
         let tracked_hash = self
             .blockhash
@@ -354,14 +382,25 @@ impl Executor for LiveExecutor {
             .as_hash()
             .map_err(|e| AgentError::Parse(format!("blockhash parse: {e}")))?;
 
-        let bundle: BuiltBundle = build_single_tx_bundle(
-            &self.payer,
-            &tip_account,
-            decision.tip_lamports,
-            &note,
-            &tracked_hash,
-            &blockhash_str,
-        )
+        let bundle: BuiltBundle = if use_sender {
+            build_single_sender_tx(
+                &self.payer,
+                &tip_account,
+                decision.tip_lamports.max(MIN_SENDER_TIP_LAMPORTS),
+                &note,
+                &tracked_hash,
+                &blockhash_str,
+            )
+        } else {
+            build_single_tx_bundle(
+                &self.payer,
+                &tip_account,
+                decision.tip_lamports,
+                &note,
+                &tracked_hash,
+                &blockhash_str,
+            )
+        }
         .map_err(|e| AgentError::Parse(format!("bundle build: {e}")))?;
 
         // Open a tracker record for this attempt.
@@ -369,7 +408,7 @@ impl Executor for LiveExecutor {
         record.signature = bundle.primary_signature().map(String::from);
         record.blockhash = Some(blockhash_str.clone());
         record.last_valid_block_height = Some(lvbh);
-        record.tip_lamports = decision.tip_lamports;
+        record.tip_lamports = bundle.tip_lamports;
         record.tip_rationale = Some(decision.rationale.clone());
         let sig = record.signature.clone().unwrap_or_default();
 
@@ -456,7 +495,12 @@ impl Executor for LiveExecutor {
         } else {
             (self.bounds, self.max_retries)
         };
-        let tip_band = recommend_from(&floor, self.oracle.smoothed_p50().map(|v| v as f64), &eff_bounds, &tip_ctx);
+        let mut tip_band = recommend_from(&floor, self.oracle.smoothed_p50().map(|v| v as f64), &eff_bounds, &tip_ctx);
+        if self.should_use_sender() {
+            tip_band.low = tip_band.low.max(MIN_SENDER_TIP_LAMPORTS);
+            tip_band.mid = tip_band.mid.max(MIN_SENDER_TIP_LAMPORTS);
+            tip_band.high = tip_band.high.max(MIN_SENDER_TIP_LAMPORTS);
+        }
 
         // Live dashboard: refresh slot + connection + the band the agent sees.
         let band_view = TipBandView {
@@ -532,26 +576,63 @@ impl LiveExecutor {
         }
 
         // --- Broadcast --------------------------------------------------------
-        let bundle_id = match self.jito.send_bundle(&bundle).await {
-            Ok(id) => id,
-            Err(e) => {
-                tracing::error!(target: "txradar::jito", error = %e, "sendBundle failed");
-                let class = classify_failure(Some(&e.to_string()), false, false);
-                // Track then immediately fail so the attempt is still logged.
+        let sender_mode = self.should_use_sender();
+        let bundle_id = if sender_mode {
+            let Some(sender) = &self.sender else {
+                let class = classify_failure(Some("Helius Sender selected but not configured"), false, false);
                 self.track(record, now);
                 self.mark_failed(&sig, class, Utc::now());
                 self.dash_note_last_completed();
                 return Ok(AttemptOutcome::Failed(class));
+            };
+            match sender.send_transaction(&bundle).await {
+                Ok(returned_sig) => {
+                    tracing::info!(
+                        target: "txradar::sender",
+                        %returned_sig, expected_sig = %sig,
+                        "transaction submitted through Helius Sender"
+                    );
+                    format!("helius-sender:{returned_sig}")
+                }
+                Err(e) => {
+                    tracing::error!(target: "txradar::sender", error = %e, "Helius Sender sendTransaction failed");
+                    let class = classify_failure(Some(&e.to_string()), false, false);
+                    self.track(record, now);
+                    self.mark_failed(&sig, class, Utc::now());
+                    self.dash_note_last_completed();
+                    return Ok(AttemptOutcome::Failed(class));
+                }
+            }
+        } else {
+            match self.jito.send_bundle(&bundle).await {
+                Ok(id) => id,
+                Err(e) => {
+                    tracing::error!(target: "txradar::jito", error = %e, "sendBundle failed");
+                    let class = classify_failure(Some(&e.to_string()), false, false);
+                    // Track then immediately fail so the attempt is still logged.
+                    self.track(record, now);
+                    self.mark_failed(&sig, class, Utc::now());
+                    self.dash_note_last_completed();
+                    return Ok(AttemptOutcome::Failed(class));
+                }
             }
         };
         record.bundle_id = Some(bundle_id.clone());
         self.track(record, now);
         self.dash_submitted_row(decision);
-        tracing::info!(
-            target: "txradar::jito",
-            %bundle_id, %sig,
-            "bundle submitted; confirming landing from stream"
-        );
+        if sender_mode {
+            tracing::info!(
+                target: "txradar::sender",
+                receipt = %bundle_id, %sig,
+                "sender transaction submitted; confirming landing from stream"
+            );
+        } else {
+            tracing::info!(
+                target: "txradar::jito",
+                %bundle_id, %sig,
+                "bundle submitted; confirming landing from stream"
+            );
+        }
 
         // --- Confirm from the stream ------------------------------------------
         let confirmed_order = CommitmentStage::Confirmed.order().unwrap_or(2);
@@ -583,7 +664,7 @@ impl LiveExecutor {
             }
             // Backup: Jito reports a hard failure faster than the stream can show
             // a non-landing. Polled at most every `jito_backup_interval`.
-            if last_jito.elapsed() >= jito_backup_interval {
+            if !sender_mode && last_jito.elapsed() >= jito_backup_interval {
                 last_jito = Instant::now();
                 if let Ok(status) = self.jito.get_inflight_status(&bundle_id).await {
                     if matches!(status, InflightStatus::Failed | InflightStatus::Invalid) {

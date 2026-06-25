@@ -6,3 +6,13 @@
 2026-06-07T16:22:00.576162Z  WARN txradar::tips: tip floor fetch failed; using fallback floor error=fetching tip floor: error sending request for url (https://bundles.jito.wtf/api/v1/bundles/tip_floor)
 2026-06-07T16:22:00.579185Z  WARN txradar::fault: INJECTED blockhash-expiry fault — attempt fails as ExpiredBlockhash (no broadcast) attempt=1 sig=2Wy1tseNXVHBE1m1ghLRiGzstst89Pb9MXncwxmo4H5xXqpeuURjXEnavDmfUh1vQiEyyfPYiAcwzo3pxvWAsM5Q
 2026-06-07T16:22:04.707905Z  INFO txradar::sim: SIMULATED landing (no broadcast) — full lifecycle recorded sig=4DDthJoWakqMaq4TjY5hpjDroASwseiqG8k8jERn6pDbUTDBAw1sjSanwuwxCcfwYyKdsEWWZ9zZqFbe5xowJNRU slot=300000005
+2026-06-20T15:33:12.556308Z  WARN txradar_agent::gemini: gemini transient HTTP error; backing off and retrying status=429 Too Many Requests attempt=1 max=4
+2026-06-20T15:33:33.505689Z  WARN txradar::fault: INJECTED blockhash-expiry fault — attempt fails as ExpiredBlockhash (no broadcast) attempt=1 sig=Zwa45RetdEAiE7ABfC5drUdq4bbYnfChWGPtgkMBYJaEZ4onHFenrAvEwBEFByAvcQwfw4HnRfN2CkgXhUn6aDz
+2026-06-20T15:33:33.908240Z  WARN txradar_agent::gemini: gemini transient HTTP error; backing off and retrying status=429 Too Many Requests attempt=1 max=4
+2026-06-20T15:33:54.190532Z  WARN txradar_agent::gemini: gemini transient HTTP error; backing off and retrying status=429 Too Many Requests attempt=2 max=4
+2026-06-20T15:33:59.473426Z  WARN txradar_agent::gemini: gemini transient HTTP error; backing off and retrying status=429 Too Many Requests attempt=3 max=4
+2026-06-20T15:46:42.913347Z  WARN txradar::agent: no Gemini key; using heuristic fallback decider (not real LLM reasoning)
+2026-06-20T15:46:43.042722Z  WARN txradar::tips: tip floor fetch failed; using fallback floor error=fetching tip floor: error sending request for url (https://bundles.jito.wtf/api/v1/bundles/tip_floor)
+2026-06-20T15:46:43.043457Z  WARN txradar::fault: INJECTED blockhash-expiry fault — attempt fails as ExpiredBlockhash (no broadcast) attempt=1 sig=3cgxoTVu3ZaC2jYY221Kdk4PgsMiPoRFiiroA4SKgGZzcFiU6EYzGq2AYd7YqXpMwUe6CgE5MXTWtdYzBmLhA9hJ
+2026-06-20T15:46:43.044814Z  WARN txradar::tips: tip floor fetch failed; using fallback floor error=fetching tip floor: error sending request for url (https://bundles.jito.wtf/api/v1/bundles/tip_floor)
+2026-06-21T12:25:08.429961Z  WARN txradar::fault: INJECTED blockhash-expiry fault — attempt fails as ExpiredBlockhash (no broadcast) attempt=1 sig=4KNWJomVNsme2mnihG8KwQZs4Ry3YfDZT8w7xcF2e5ScjwHWYTphHg3Hzc24kjuBf4acteBB34wmxQe9PesJod1x

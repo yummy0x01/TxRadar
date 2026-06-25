@@ -1,6 +1,9 @@
 # Rust / Cargo
 /target
 **/target
+/target-*
+/target-local
+/target-local-check
 Cargo.lock.bak
 
 # Secrets & local config — NEVER commit keypairs or API keys
@@ -9,6 +12,9 @@ keypairs/
 *.keypair
 .env
 .env.local
+.env.local.*
+.env.local.backup
+.env*.backup
 config/local.toml
 config/secrets.toml
 

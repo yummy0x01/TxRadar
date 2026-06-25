@@ -13,6 +13,7 @@ use rand::seq::SliceRandom;
 // extra dependency for a single `transfer` call.
 #[allow(deprecated)]
 use solana_sdk::system_instruction;
+use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_sdk::{
     hash::Hash,
     instruction::Instruction,
@@ -36,12 +37,29 @@ pub const JITO_TIP_ACCOUNTS: [&str; 8] = [
     "3AVi9Tg9Uo68tJfuvoKvqKNWKkC5wPdSSdeBnizKZ6jT",
 ];
 
+/// Helius Sender designated mainnet-beta tip accounts.
+pub const HELIUS_SENDER_TIP_ACCOUNTS: [&str; 10] = [
+    "4ACfpUFoaSD9bfPdeu6DBt89gB6ENTeHBXCAi87NhDEE",
+    "D2L6yPZ2FmmmTKPgzaMKdhu6EWZcTpLy1Vhx8uvZe7NZ",
+    "9bnz4RShgq1hAnLnZbP8kbgBg1kEmcJBYQq3gQbmnSta",
+    "5VY91ws6B2hMmBFRsXkoAAdsPHBJwRfBht4DXox3xkwn",
+    "2nyhqdwKcJZR2vcqCyrYsaPVdAnFoJjiksCXJ7hfEYgD",
+    "2q5pghRs6arqVjRvT5gfgWfWcHWmw1ZuCzphgd5KfWGJ",
+    "wyvPkWjVZz1M8fHQnMMCDTQDbkManefNNhweYk5WkcF",
+    "3KCKozbAaF75qEU33jtzozcJ29yJuaLJTy2jFdzUY8bT",
+    "4vieeGHPYPG2MmyPRcYjdiDmmhN3ww7hsFNap8pVN3Ey",
+    "4TQLFNWK8AovT1gFvda5jfw2oJeRMKEmw7aH6MGBJ3or",
+];
+
 /// SPL Memo v2 program — our "core" instruction is a memo so each bundle is
 /// self-documenting and trivially verifiable on an explorer.
 const MEMO_PROGRAM_ID: &str = "MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr";
 
 /// Minimum Jito tip per their rules (lamports).
 pub const MIN_TIP_LAMPORTS: u64 = 1000;
+
+/// Helius Sender's documented minimum tip for the fast path.
+pub const MIN_SENDER_TIP_LAMPORTS: u64 = 200_000;
 
 #[derive(Debug, thiserror::Error)]
 pub enum BundleError {
@@ -53,6 +71,8 @@ pub enum BundleError {
     Serialize(String),
     #[error("tip {got} below Jito minimum {min} lamports")]
     TipTooLow { got: u64, min: u64 },
+    #[error("Helius Sender tip {got} below minimum {min} lamports")]
+    SenderTipTooLow { got: u64, min: u64 },
 }
 
 /// A built, signed, encoded bundle ready for `sendBundle`, plus the metadata the
@@ -96,6 +116,16 @@ pub fn random_tip_account() -> Pubkey {
     Pubkey::from_str(s).expect("hardcoded tip account is valid")
 }
 
+/// Pick a random Helius Sender tip account. Reuses the currently documented
+/// Sender tip accounts.
+pub fn random_sender_tip_account() -> Pubkey {
+    let s = HELIUS_SENDER_TIP_ACCOUNTS
+        .choose(&mut rand::thread_rng())
+        .copied()
+        .unwrap_or(HELIUS_SENDER_TIP_ACCOUNTS[0]);
+    Pubkey::from_str(s).expect("hardcoded Sender tip account is valid")
+}
+
 /// Build the SPL Memo instruction carrying `note`.
 fn memo_instruction(note: &str) -> Result<Instruction, BundleError> {
     let program_id =
@@ -116,6 +146,36 @@ pub fn build_tip_transaction(
         return Err(BundleError::TipTooLow { got: tip_lamports, min: MIN_TIP_LAMPORTS });
     }
     let instructions = vec![
+        memo_instruction(note)?,
+        system_instruction::transfer(&payer.pubkey(), tip_account, tip_lamports),
+    ];
+    let tx = Transaction::new_signed_with_payer(
+        &instructions,
+        Some(&payer.pubkey()),
+        &[payer],
+        blockhash,
+    );
+    Ok(tx)
+}
+
+/// Build a single signed transaction for Helius Sender's fast path:
+/// compute-budget priority fee, memo, and a Sender/Jito tip transfer.
+pub fn build_sender_transaction(
+    payer: &Keypair,
+    tip_account: &Pubkey,
+    tip_lamports: u64,
+    note: &str,
+    blockhash: Hash,
+) -> Result<Transaction, BundleError> {
+    if tip_lamports < MIN_SENDER_TIP_LAMPORTS {
+        return Err(BundleError::SenderTipTooLow {
+            got: tip_lamports,
+            min: MIN_SENDER_TIP_LAMPORTS,
+        });
+    }
+    let instructions = vec![
+        ComputeBudgetInstruction::set_compute_unit_limit(100_000),
+        ComputeBudgetInstruction::set_compute_unit_price(200_000),
         memo_instruction(note)?,
         system_instruction::transfer(&payer.pubkey(), tip_account, tip_lamports),
     ];
@@ -160,3 +220,28 @@ pub fn build_single_tx_bundle(
     })
 }
 
+/// Build a single Helius Sender transaction and package it in the same
+/// [`BuiltBundle`] metadata carrier the executor already tracks.
+pub fn build_single_sender_tx(
+    payer: &Keypair,
+    tip_account: &Pubkey,
+    tip_lamports: u64,
+    note: &str,
+    tracked_blockhash: &Hash,
+    blockhash_str: &str,
+) -> Result<BuiltBundle, BundleError> {
+    let tx = build_sender_transaction(payer, tip_account, tip_lamports, note, *tracked_blockhash)?;
+    let signature = tx
+        .signatures
+        .first()
+        .map(|s| s.to_string())
+        .ok_or_else(|| BundleError::Serialize("unsigned transaction".into()))?;
+    let encoded = encode_transaction(&tx)?;
+    Ok(BuiltBundle {
+        encoded_txs: vec![encoded],
+        signatures: vec![signature],
+        tip_account: tip_account.to_string(),
+        tip_lamports,
+        blockhash: blockhash_str.to_string(),
+    })
+}

@@ -16,6 +16,7 @@
 
 pub mod blockhash;
 pub mod bundle;
+pub mod helius;
 pub mod jito;
 pub mod rpc;
 pub mod tracker;

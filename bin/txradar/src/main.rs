@@ -29,6 +29,8 @@ struct Secrets {
     /// the env config. Empty -> the default generativelanguage.googleapis.com.
     gemini_base_url: Option<String>,
     jito_uuid: Option<String>,
+    broadcast: Option<String>,
+    helius_sender_url: Option<String>,
 }
 
 impl Secrets {
@@ -41,6 +43,8 @@ impl Secrets {
             gemini_api_key: var("GEMINI_API_KEY"),
             gemini_base_url: var("GEMINI_BASE_URL"),
             jito_uuid: var("TXRADAR_JITO_UUID"),
+            broadcast: var("TXRADAR_BROADCAST"),
+            helius_sender_url: var("TXRADAR_HELIUS_SENDER_URL"),
         }
     }
 
@@ -250,7 +254,7 @@ async fn run_stream_smoketest(config: &Config, x_token: String) {
 /// which signs real transactions but doesn't broadcast and labels every record
 /// with a `-sim` network suffix so it's never mistaken for a graded landing.
 async fn run_fault_demo(config: &Config, secrets: &Secrets, tui: bool) -> Result<()> {
-    use executor::{ChainMode, ExecutorParams, LiveExecutor};
+    use executor::{BroadcastMode, ChainMode, ExecutorParams, LiveExecutor};
     use ingest::NetworkState;
     use txradar_core::blockhash::BlockhashManager;
     use txradar_core::bundle::load_keypair;
@@ -294,6 +298,7 @@ async fn run_fault_demo(config: &Config, secrets: &Secrets, tui: bool) -> Result
         poll_interval_secs: config.lifecycle.status_poll_interval_secs,
         // Unused in the simulated fault demo (it never starves), but required.
         starve_tip: config.tips.min_lamports,
+        broadcast: BroadcastMode::Jito,
     };
     let exec = LiveExecutor::new(
         params,
@@ -301,6 +306,7 @@ async fn run_fault_demo(config: &Config, secrets: &Secrets, tui: bool) -> Result
         payer,
         blockhash,
         jito,
+        None,
         oracle,
         bounds,
         tracker,
@@ -328,11 +334,12 @@ async fn run_fault_demo(config: &Config, secrets: &Secrets, tui: bool) -> Result
 /// landing confirmed from the Yellowstone stream, submission timed to the Jito
 /// leader window. Requires a funded keypair and a Yellowstone x-token.
 async fn run_live_campaign(config: &Config, secrets: &Secrets, tui: bool) -> Result<()> {
-    use executor::{ChainMode, ExecutorParams, LiveExecutor};
+    use executor::{BroadcastMode, ChainMode, ExecutorParams, LiveExecutor};
     use ingest::NetworkState;
     use solana_sdk::signature::Signer;
     use txradar_core::blockhash::BlockhashManager;
     use txradar_core::bundle::load_keypair;
+    use txradar_core::helius::SenderClient;
     use txradar_core::jito::JitoClient;
     use txradar_core::rpc::RpcClient;
     use txradar_core::tracker::LifecycleTracker;
@@ -379,6 +386,12 @@ async fn run_live_campaign(config: &Config, secrets: &Secrets, tui: bool) -> Res
         secrets.jito_uuid.clone(),
         config.jito.max_requests_per_sec,
     );
+    let broadcast = resolve_broadcast_mode(secrets);
+    let sender = match broadcast {
+        BroadcastMode::Sender | BroadcastMode::Hybrid => Some(SenderClient::new(sender_url(secrets))),
+        BroadcastMode::Jito => None,
+    };
+    tracing::info!(target: "txradar::run", ?broadcast, "broadcast mode selected");
     let bounds = TipBounds::from(&config.tips);
     let oracle = TipOracle::new(config.jito.tip_floor_rest.clone(), bounds);
 
@@ -406,6 +419,7 @@ async fn run_live_campaign(config: &Config, secrets: &Secrets, tui: bool) -> Res
         // Starved campaign txs tip at the operator floor minimum (the Jito
         // minimum): a real broadcast that's non-competitive and won't land.
         starve_tip: config.tips.min_lamports,
+        broadcast,
     };
     let exec = LiveExecutor::new(
         params,
@@ -413,6 +427,7 @@ async fn run_live_campaign(config: &Config, secrets: &Secrets, tui: bool) -> Res
         payer,
         blockhash,
         jito,
+        sender,
         oracle,
         bounds,
         tracker,
@@ -642,6 +657,23 @@ fn flag_u32(args: &[String], name: &str) -> Option<u32> {
         }
     }
     None
+}
+
+fn resolve_broadcast_mode(secrets: &Secrets) -> executor::BroadcastMode {
+    match secrets.broadcast.as_deref().map(str::to_ascii_lowercase).as_deref() {
+        Some("jito") => executor::BroadcastMode::Jito,
+        Some("sender") | Some("helius") => executor::BroadcastMode::Sender,
+        Some("hybrid") => executor::BroadcastMode::Hybrid,
+        _ if secrets.helius_sender_url.is_some() => executor::BroadcastMode::Hybrid,
+        _ => executor::BroadcastMode::Jito,
+    }
+}
+
+fn sender_url(secrets: &Secrets) -> String {
+    secrets
+        .helius_sender_url
+        .clone()
+        .unwrap_or_else(|| "https://sender.helius-rpc.com/fast".to_string())
 }
 
 /// Run the graded lifecycle-log campaign: `count` logical transactions over one

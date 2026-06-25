@@ -5825,6 +5825,7 @@ dependencies = [
  "reqwest",
  "serde",
  "serde_json",
+ "solana-compute-budget-interface",
  "solana-sdk",
  "thiserror 1.0.69",
  "tokio",
